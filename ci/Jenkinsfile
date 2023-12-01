@@ -34,36 +34,36 @@ pipeline {
             }
         }
 
-        stage('Build') {
-            agent any
-            steps {
-                script {
+        // stage('Build') {
+        //     agent any
+        //     steps {
+        //         script {
                                       
-                    sh '''
-	                        source /etc/profile.d/maven.sh
-                            mvn --version
-                            pwd
-                            ls -ltr
-                            mvn clean package
+        //             sh '''
+	    //                     source /etc/profile.d/maven.sh
+        //                     mvn --version
+        //                     pwd
+        //                     ls -ltr
+        //                     mvn clean package
                         
-                        '''
-                }
-            }
-        }
+        //                 '''
+        //         }
+        //     }
+        // }
 
-          stage('Run Unit Tests') {
-              agent any            
-              steps {
-                  sh '''
-	                        source /etc/profile.d/maven.sh
-                            mvn --version
-                            pwd
-                            ls -ltr
-                            mvn test
+        //   stage('Run Unit Tests') {
+        //       agent any            
+        //       steps {
+        //           sh '''
+	    //                     source /etc/profile.d/maven.sh
+        //                     mvn --version
+        //                     pwd
+        //                     ls -ltr
+        //                     mvn test
                         
-                        '''
-              }
-          }
+        //                 '''
+        //       }
+        //   }
 
          stage('Build Docker Image') {
             agent any
