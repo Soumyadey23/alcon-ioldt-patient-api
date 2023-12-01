@@ -1,0 +1,159 @@
+@Library('alcon_rdit_jenkins_sharedlibraries_cicd@v1.0.0') _
+
+pipeline {
+    agent none
+    options {
+        timeout(time: 45, unit: 'MINUTES')
+        skipDefaultCheckout()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(artifactDaysToKeepStr: '30', artifactNumToKeepStr: '2', daysToKeepStr: '10', numToKeepStr: '15'))
+    }
+
+    environment {
+        DEPLOY_ENV = "${BRANCH_NAME == 'master' ? 'prod' : BRANCH_NAME}"
+        DEPLOY_PARAM_ENV = "${DEPLOY_ENV == 'dev' ? 'DEVELOPMENT' : BRANCH_NAME}"
+        AWS_ACCESS_KEYS = credentials("ioldt-mlops-cicd-iam-usr_${BRANCH_NAME}")
+        AWS_DEFAULT_REGION = "us-east-1"
+        VERACODE_STAGE = "null"
+        AWS_ACCOUNTID = "488560501480"
+        DOCKER_ECR_ACCOUNT = "488560501480.dkr.ecr.us-east-1.amazonaws.com"
+        
+        
+        
+        
+    }
+
+    stages {
+        stage('Checkout') {
+            agent { label 'cloud-rdit-mlops-linux' }
+            steps {
+                step([$class: 'WsCleanup'])
+                checkout scm
+                script {
+                    def props = readProperties(file: "ci/jenkins-param.properties")
+                    env.isApproversDevelopers = "${props['approversDevelopers']}"
+                    env.isApproversDevOps = "${props['approversDevOps']}" 
+                    env.APPROVAL_EMAIL_TO = "${props['approvalEmailTo']}"
+                    env.POST_EMAIL_TO = "${props['postEmailTo']}"
+                    env.IS_APPROVERS = "${props['approvers']}"
+                    env.AUTO_APPROVAL = "${props['autoApprove']}"
+                    env.AWS_DEFAULT_REGION = "${props['AWS_DEFAULT_REGION']}"
+                    env.AWS_ACCOUNT_ID = sh(script: 'aws sts get-caller-identity --query Account --output text', returnStdout: true).trim()
+                }
+            }
+        }
+
+        stage('Build') {
+            agent { label 'cloud-rdit-mlops-linux' }
+            steps {
+                script {
+                                      
+                    sh '''
+	                        source /etc/profile.d/maven.sh
+                            mvn --version
+                            pwd
+                            ls -ltr
+                            mvn clean package
+                        
+                        '''
+                }
+            }
+        }
+//         stage('Veracode Scan for Java') {
+//             agent { label 'cloud-rdit-mlops-linux' }
+//             steps {
+//              unstash 'repo'
+//                     script {
+//                             VERACODE_STAGE = "started"
+//                             echo "Build Java package for Veracode Scans"
+//                             sh 'mvn clean package'  
+//                             zip zipFile: "veracode_uploads/alcon-ioldt-patient-api-${GIT_HASH}-${env.BRANCH_NAME}.zip", archive: true, dir: "veracode_uploads"
+ 
+//                             echo "Java Application Artifacts Veracode Scan Start"
+//                             veracodeUploadAndScan(CRED_ID: "DEV_VRA_CRED", VC_PROPERTY_FILE: "${WORKSPACE}/ci/veracode.properties")
+//                             echo "Java Application Artifacts Veracode Scan End"
+ 
+//                             VERACODE_STAGE = "passed"
+//          }
+//      }
+//  }
+          stage('Run Unit Tests') {
+              agent { label 'cloud-rdit-mlops-linux' }            
+              steps {
+                  sh '''
+	                        source /etc/profile.d/maven.sh
+                            mvn --version
+                            pwd
+                            ls -ltr
+                            mvn test
+                        
+                        '''
+              }
+          }
+
+         stage('Build Docker Image') {
+            agent { label 'cloud-rdit-mlops-linux' }
+             steps {
+                
+                    sh '''
+                       aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${DOCKER_ECR_ACCOUNT}
+                       docker build -t alcon-ioldt-patient-api-tf:${BUILD_NUMBER} -f Dockerfile --build-arg BUILD_NUMBER=${BUILD_NUMBER} --build-arg BRANCH_NAME=${DEPLOY_ENV} .
+                       docker tag alcon-ioldt-patient-api-tf:${BUILD_NUMBER} ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest                                                
+                       docker push ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest
+                    '''
+                }
+                
+            }
+        }
+    //     stage('Deploy') {
+    //         agent { label 'cloud-rdit-rss-linux' }
+    //         steps {
+    //             echo 'Deploy Docker Image in ECS'
+    //             script {
+    //                 sh "aws ecs update-service --cluster alcon-mlops-ioldt-${DEPLOY_ENV}-patient-api-offering-tf --service alcon-mlops-ioldt-${DEPLOY_ENV}-patient-api-offering-service-tf --region $AWS_DEFAULT_REGION --task-definition ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api:latest"
+    //             }
+    //         }
+    //     }
+
+    }
+        
+
+    post {
+        success {
+            script {
+                sendEmailNotification(EMAIL_TO: env.POST_EMAIL_TO, ATTACH_LOG: false)
+            }
+        }
+        failure {
+            script {
+                sendEmailNotification(EMAIL_TO: env.POST_EMAIL_TO, ATTACH_LOG: true)
+            }
+        }
+        unstable {
+            script {
+                sendEmailNotification(EMAIL_TO: env.POST_EMAIL_TO, ATTACH_LOG: true)
+            }
+        }
+        fixed {
+            script {
+                sendEmailNotification(EMAIL_TO: env.POST_EMAIL_TO, ATTACH_LOG: false)
+            }
+        }
+        aborted {
+            script {
+                sendEmailNotification(EMAIL_TO: env.POST_EMAIL_TO, ATTACH_LOG: false)
+            }
+        }
+        always {
+            node('cloud-rdit-mlops-linux') {
+                step([$class: 'WsCleanup'])
+            }
+        }
+    }
+
+
+
+
+
+
+
