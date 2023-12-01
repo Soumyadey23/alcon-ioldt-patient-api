@@ -11,7 +11,9 @@ pipeline {
     environment {
         DEPLOY_ENV = "${BRANCH_NAME == 'master' ? 'prod' : BRANCH_NAME}"
         DEPLOY_PARAM_ENV = "${DEPLOY_ENV == 'dev' ? 'DEVELOPMENT' : BRANCH_NAME}"
-        AWS_ACCESS_KEYS = credentials("soumya-terraform${BRANCH_NAME}")
+        ## AWS_ACCESS_KEYS = credentials("soumya-terraform${BRANCH_NAME}")
+		AWS_ACCESS_KEY_ID = "AKIAYA42Z6IPHBTQK6CU"
+		AWS_SECRET_ACCESS_KEY = "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"
         AWS_DEFAULT_REGION = "us-east-1"
         AWS_ACCOUNTID = "551691088414"
         DOCKER_ECR_ACCOUNT = "551691088414.dkr.ecr.us-east-1.amazonaws.com"
