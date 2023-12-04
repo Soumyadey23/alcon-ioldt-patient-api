@@ -42,7 +42,7 @@ pipeline {
 					   withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'awscredid', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) { 
                        sh "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${DOCKER_ECR_ACCOUNT}"
 					   }
-                       sh "docker build -t alcon-ioldt-patient-api-tf:${BUILD_NUMBER} -f Dockerfile --build-arg BUILD_NUMBER=${BUILD_NUMBER} --build-arg BRANCH_NAME=${DEPLOY_ENV} ."
+                       sh "docker build --no-cache -t alcon-ioldt-patient-api-tf:${BUILD_NUMBER} -f Dockerfile --build-arg BUILD_NUMBER=${BUILD_NUMBER} --build-arg BRANCH_NAME=${DEPLOY_ENV} ."
                        sh "docker tag alcon-ioldt-patient-api-tf:${BUILD_NUMBER} ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest"                                                
                        sh "docker push ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest"
                    
