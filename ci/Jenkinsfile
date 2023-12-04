@@ -60,6 +60,17 @@ pipeline {
     //         }
     //     }
 
+ stage('Cleanup Docker Images') {
+        agent any          
+        steps {
+            sh '''
+                docker rmi -f alcon-ioldt-patient-api-tf:${BUILD_NUMBER}
+                docker rmi -f ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest
+            '''
+        }
+     }
+    
+
     }
 	
 	}
