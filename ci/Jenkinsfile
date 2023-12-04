@@ -71,32 +71,32 @@ pipeline {
 //      }
     
 
-    stage('Cleanup Docker Images') {
-    agent any
-    steps {
-        script {
+//     stage('Cleanup Docker Images') {
+//     agent any
+//     steps {
+//         script {
           
-            // Check if the Docker images exist before removing
-            def imageExistsTag = sh(script: "docker images -q alcon-ioldt-patient-api-tf:${BUILD_NUMBER}", returnStatus: true) == 0
-            def imageExistsLatest = sh(script: "docker images -q ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest", returnStatus: true) == 0
+//             // Check if the Docker images exist before removing
+//             def imageExistsTag = sh(script: "docker images -q alcon-ioldt-patient-api-tf:${BUILD_NUMBER}", returnStatus: true) == 0
+//             def imageExistsLatest = sh(script: "docker images -q ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest", returnStatus: true) == 0
 
-            // Remove the Docker images if they exist
-            if (imageExistsTag) {
-                sh "docker rmi -f /alcon-ioldt-patient-api-tf:${BUILD_NUMBER}"
-                echo "Docker image alcon-ioldt-patient-api-tf:${BUILD_NUMBER} removed successfully."
-            } else {
-                echo "Docker image alcon-ioldt-patient-api-tf:${BUILD_NUMBER} not found."
-            }
+//             // Remove the Docker images if they exist
+//             if (imageExistsTag) {
+//                 sh "docker rmi -f /alcon-ioldt-patient-api-tf:${BUILD_NUMBER}"
+//                 echo "Docker image alcon-ioldt-patient-api-tf:${BUILD_NUMBER} removed successfully."
+//             } else {
+//                 echo "Docker image alcon-ioldt-patient-api-tf:${BUILD_NUMBER} not found."
+//             }
 
-            if (imageExistsLatest) {
-                sh "docker rmi -f ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest"
-                echo "Docker image ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest removed successfully."
-            } else {
-                echo "Docker image ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest not found."
-            }
-        }
-    }
-}
+//             if (imageExistsLatest) {
+//                 sh "docker rmi -f ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest"
+//                 echo "Docker image ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest removed successfully."
+//             } else {
+//                 echo "Docker image ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest not found."
+//             }
+//         }
+//     }
+// }
 
     }
 	
