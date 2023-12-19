@@ -1,0 +1,113 @@
+
+pipeline {
+    agent any
+    options {
+        timeout(time: 45, unit: 'MINUTES')
+        skipDefaultCheckout()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(artifactDaysToKeepStr: '30', artifactNumToKeepStr: '2', daysToKeepStr: '10', numToKeepStr: '15'))
+    }
+
+    environment {
+        DEPLOY_ENV = "${BRANCH_NAME == 'master' ? 'prod' : BRANCH_NAME}"
+        DEPLOY_PARAM_ENV = "${DEPLOY_ENV == 'dev' ? 'DEVELOPMENT' : BRANCH_NAME}"
+        AWS_DEFAULT_REGION = "us-east-1"
+        AWS_ACCOUNTID = "551691088414"
+        DOCKER_ECR_ACCOUNT = "551691088414.dkr.ecr.us-east-1.amazonaws.com"
+		
+        
+        
+        
+        
+    }
+
+    stages {
+        stage('Checkout') {
+            agent any
+            steps {
+                step([$class: 'WsCleanup'])
+                checkout scm
+              
+            }
+        }
+
+        
+                 
+
+         stage('Build Docker Image') {
+            agent any
+             steps {
+                
+                    script {
+					   withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'awscredid', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) { 
+                       sh "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${DOCKER_ECR_ACCOUNT}"
+					   }
+                       sh "docker build -t alcon-ioldt-patient-api-tf:${BUILD_NUMBER} -f Dockerfile --build-arg BUILD_NUMBER=${BUILD_NUMBER} --build-arg BRANCH_NAME=${DEPLOY_ENV} ."
+                       sh "docker tag alcon-ioldt-patient-api-tf:${BUILD_NUMBER} ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest"                                                
+                       sh "docker push ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest"
+                   
+                }
+                
+            }
+        }
+    //     stage('Deploy') {
+    //         agent { label 'cloud-rdit-rss-linux' }
+    //         steps {
+    //             echo 'Deploy Docker Image in ECS'
+    //             script {
+    //                 sh "aws ecs update-service --cluster alcon-mlops-ioldt-${DEPLOY_ENV}-patient-api-offering-tf --service alcon-mlops-ioldt-${DEPLOY_ENV}-patient-api-offering-service-tf --region $AWS_DEFAULT_REGION --task-definition ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api:latest"
+    //             }
+    //         }
+    //     }
+
+//  stage('Cleanup Docker Images') {
+//         agent any          
+//         steps {
+//             sh '''
+//                 docker rmi -f alcon-ioldt-patient-api-tf:${BUILD_NUMBER}
+//                 docker rmi -f ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest
+//             '''
+//         }
+//      }
+    
+
+//     stage('Cleanup Docker Images') {
+//     agent any
+//     steps {
+//         script {
+          
+//             // Check if the Docker images exist before removing
+//             def imageExistsTag = sh(script: "docker images -q alcon-ioldt-patient-api-tf:${BUILD_NUMBER}", returnStatus: true) == 0
+//             def imageExistsLatest = sh(script: "docker images -q ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest", returnStatus: true) == 0
+
+//             // Remove the Docker images if they exist
+//             if (imageExistsTag) {
+//                 sh "docker rmi -f /alcon-ioldt-patient-api-tf:${BUILD_NUMBER}"
+//                 echo "Docker image alcon-ioldt-patient-api-tf:${BUILD_NUMBER} removed successfully."
+//             } else {
+//                 echo "Docker image alcon-ioldt-patient-api-tf:${BUILD_NUMBER} not found."
+//             }
+
+//             if (imageExistsLatest) {
+//                 sh "docker rmi -f ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest"
+//                 echo "Docker image ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest removed successfully."
+//             } else {
+//                 echo "Docker image ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest not found."
+//             }
+//         }
+//     }
+// }
+
+    }
+	
+	}
+        
+
+   
+
+
+
+
+
+
+

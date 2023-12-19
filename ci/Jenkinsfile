@@ -1,6 +1,7 @@
+@Library('alcon_rdit_jenkins_sharedlibraries_cicd@v1.0.0') _
 
 pipeline {
-    agent any
+    agent none
     options {
         timeout(time: 45, unit: 'MINUTES')
         skipDefaultCheckout()
@@ -11,103 +12,166 @@ pipeline {
     environment {
         DEPLOY_ENV = "${BRANCH_NAME == 'master' ? 'prod' : BRANCH_NAME}"
         DEPLOY_PARAM_ENV = "${DEPLOY_ENV == 'dev' ? 'DEVELOPMENT' : BRANCH_NAME}"
+        AWS_ACCESS_KEYS = credentials("ioldt-mlops-cicd-iam-usr_${env.BRANCH_NAME}")
         AWS_DEFAULT_REGION = "us-east-1"
-        AWS_ACCOUNTID = "551691088414"
-        DOCKER_ECR_ACCOUNT = "551691088414.dkr.ecr.us-east-1.amazonaws.com"
-		
-        
-        
-        
-        
+        VERACODE_STAGE = "null"
+        AWS_ACCOUNTID = "488560501480"
+        DOCKER_ECR_ACCOUNT = "488560501480.dkr.ecr.us-east-1.amazonaws.com"
     }
 
     stages {
         stage('Checkout') {
-            agent any
+            agent { label 'cloud-rdit-mlops-linux' }
             steps {
                 step([$class: 'WsCleanup'])
                 checkout scm
-              
-            }
-        }
-
-        
-                 
-
-         stage('Build Docker Image') {
-            agent any
-             steps {
-                
-                    script {
-					   withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', accessKeyVariable: 'AWS_ACCESS_KEY_ID', credentialsId: 'awscredid', secretKeyVariable: 'AWS_SECRET_ACCESS_KEY']]) { 
-                       sh "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${DOCKER_ECR_ACCOUNT}"
-					   }
-                       sh "docker build -t alcon-ioldt-patient-api-tf:${BUILD_NUMBER} -f Dockerfile --build-arg BUILD_NUMBER=${BUILD_NUMBER} --build-arg BRANCH_NAME=${DEPLOY_ENV} ."
-                       sh "docker tag alcon-ioldt-patient-api-tf:${BUILD_NUMBER} ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest"                                                
-                       sh "docker push ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest"
-                   
+                script {
+                    def props = readProperties(file: "ci/jenkins-param.properties")
+                    env.AWS_CREDENTIALS = "${props['awsKey']}_${env.DEPLOY_ENV}"
+                    env.isApproversDevelopers = "${props['approversDevelopers']}"
+                    env.isApproversDevOps = "${props['approversDevOps']}" 
+                    env.APPROVAL_EMAIL_TO = "${props['approvalEmailTo']}"
+                    env.POST_EMAIL_TO = "${props['postEmailTo']}"
+                    env.IS_APPROVERS = "${props['approvers']}"
+                    env.AUTO_APPROVAL = "${props['autoApprove']}"
+                    env.AWS_DEFAULT_REGION = "${props['AWS_DEFAULT_REGION']}"
+                    env.AWS_ACCOUNT_ID = sh(script: 'aws sts get-caller-identity --query Account --output text', returnStdout: true).trim()
                 }
-                
             }
         }
-    //     stage('Deploy') {
-    //         agent { label 'cloud-rdit-rss-linux' }
-    //         steps {
-    //             echo 'Deploy Docker Image in ECS'
-    //             script {
-    //                 sh "aws ecs update-service --cluster alcon-mlops-ioldt-${DEPLOY_ENV}-patient-api-offering-tf --service alcon-mlops-ioldt-${DEPLOY_ENV}-patient-api-offering-service-tf --region $AWS_DEFAULT_REGION --task-definition ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api:latest"
-    //             }
-    //         }
-    //     }
 
-//  stage('Cleanup Docker Images') {
-//         agent any          
-//         steps {
-//             sh '''
-//                 docker rmi -f alcon-ioldt-patient-api-tf:${BUILD_NUMBER}
-//                 docker rmi -f ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest
-//             '''
-//         }
-//      }
-    
+        stage('Maven Build') {
+            agent { label 'cloud-rdit-mlops-linux' }
+            steps {
+                script {
+                    sh '''
+                        source /etc/profile.d/maven.sh
+                        mvn --version
+                        mvn clean package
+                    '''
+                }
+            }
+        }
+        stage('Veracode Scan') {
+            agent { label 'cloud-rdit-mlops-linux' }
+            steps {
+                script {
+                    try {
+                        VERACODE_STAGE = "started"
+                        echo "Build package for Veracode Scans"
 
-//     stage('Cleanup Docker Images') {
-//     agent any
-//     steps {
-//         script {
-          
-//             // Check if the Docker images exist before removing
-//             def imageExistsTag = sh(script: "docker images -q alcon-ioldt-patient-api-tf:${BUILD_NUMBER}", returnStatus: true) == 0
-//             def imageExistsLatest = sh(script: "docker images -q ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest", returnStatus: true) == 0
+                        sh 'mkdir -p veracode_uploads'
+                        sh 'cp -r patient-0.0.1-SNAPSHOT.jar veracode_uploads/'
 
-//             // Remove the Docker images if they exist
-//             if (imageExistsTag) {
-//                 sh "docker rmi -f /alcon-ioldt-patient-api-tf:${BUILD_NUMBER}"
-//                 echo "Docker image alcon-ioldt-patient-api-tf:${BUILD_NUMBER} removed successfully."
-//             } else {
-//                 echo "Docker image alcon-ioldt-patient-api-tf:${BUILD_NUMBER} not found."
-//             }
+                        zip zipFile: "veracode_uploads/alcon-ioldt-patient-api-${env.BRANCH_NAME}.zip", archive: true, dir: "veracode_uploads"
 
-//             if (imageExistsLatest) {
-//                 sh "docker rmi -f ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest"
-//                 echo "Docker image ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest removed successfully."
-//             } else {
-//                 echo "Docker image ${DOCKER_ECR_ACCOUNT}/alcon-ioldt-patient-api-tf:latest not found."
-//             }
-//         }
-//     }
-// }
+                        echo "Java API Application Artifacts Veracode Scan Start"
+                        // Adjust CRED_ID and VC_PROPERTY_FILE according to your setup
+                        veracodeUploadAndScan(CRED_ID: "DEV_VRA_CRED", VC_PROPERTY_FILE: "ci/veracode.properties")
+                        echo "Java API Application Artifacts Veracode Scan End"
 
+                        VERACODE_STAGE = "passed"
+                        } catch (Exception e) {
+                        VERACODE_STAGE = "failed"
+                        currentBuild.result = 'FAILURE'
+                        echo "Error occurred during Veracode scan: ${e}"
+                        // Handle the error as per your requirement (e.g., send notifications, fallback actions, etc.)
+            }
+        }
     }
-	
-	}
-        
-
-   
+}
 
 
 
 
 
+        stage('Run Unit Tests') {
+            agent { label 'cloud-rdit-mlops-linux' }            
+            steps {
+                sh '''
+                    source /etc/profile.d/maven.sh
+                    mvn test
+                '''
+            }
+        }
+
+        stage('Build Docker Image') {
+            agent { label 'cloud-rdit-mlops-linux' }
+            steps {
+            script {
+            def imageTag = "${DOCKER_ECR_ACCOUNT}/alcon-mlops-ioldt-poc-patient-api-tf:latest"
+            
+            // Authenticate Docker client to Amazon ECR
+            sh "aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${DOCKER_ECR_ACCOUNT}"
+            sh "docker build -t ${imageTag} -f Dockerfile --build-arg BUILD_NUMBER=${BUILD_NUMBER} --build-arg BRANCH_NAME=${DEPLOY_ENV} ."
+            sh "docker tag ${imageTag} ${DOCKER_ECR_ACCOUNT}/alcon-mlops-ioldt-poc-patient-api-tf:latest"
+            sh "docker push ${DOCKER_ECR_ACCOUNT}/alcon-mlops-ioldt-poc-patient-api-tf:latest"
+        }
+    }
+}
 
 
+        stage('Deploy') {
+            agent { label 'cloud-rdit-rss-linux' }
+            steps {
+                echo 'Deploy/Push Docker Image to ECR and ECS Execution'
+                script {
+                    def DEPLOY_ENV = "${BRANCH_NAME == 'master' ? 'prod' : BRANCH_NAME}"
+
+                    def AWS_ECS_TASK_ARN = sh(
+                        script: "aws ecs list-tasks --cluster 'alcon-mlops-ioldt-${DEPLOY_ENV}-patient-api-offering-tf' --service 'alcon-mlops-ioldt-${DEPLOY_ENV}-patient-api-offering-service-tf' --output text --query 'taskArns[0]' || echo 'None'",
+                        returnStdout: true
+                    ).trim()
+
+                    if (AWS_ECS_TASK_ARN == 'None') {
+                        echo "No tasks found to stop in ECS cluster."
+                    } else {
+                        echo "Output: ${AWS_ECS_TASK_ARN}"
+                        sh "aws ecs stop-task --cluster alcon-mlops-ioldt-${DEPLOY_ENV}-patient-api-offering-tf --task ${AWS_ECS_TASK_ARN}"
+
+                        // Set desired count for ECS service
+                        sh "aws ecs update-service --cluster alcon-mlops-ioldt-${DEPLOY_ENV}-patient-api-offering-tf --service alcon-mlops-ioldt-${DEPLOY_ENV}-patient-api-offering-service-tf --desired-count 1"
+                    }
+                }
+            }
+        }
+    }
+    }
+    post {
+        success {
+            script {
+                sendEmailNotification(EMAIL_TO: POST_EMAIL_TO, ATTACH_LOG: false)
+                sendEmailNotification(EMAIL_TO: POST_EMAIL_TO, ATTACH_LOG: false, VERACODE_STAGE: "${VERACODE_STAGE}")
+            }
+        }
+        failure {
+            script {
+                sendEmailNotification(EMAIL_TO: POST_EMAIL_TO, ATTACH_LOG: true)
+                sendEmailNotification(EMAIL_TO: POST_EMAIL_TO, ATTACH_LOG: true, VERACODE_STAGE: "${VERACODE_STAGE}")
+            }
+        }
+        unstable {
+            script {
+                sendEmailNotification(EMAIL_TO: POST_EMAIL_TO, ATTACH_LOG: true)
+                sendEmailNotification(EMAIL_TO: POST_EMAIL_TO, ATTACH_LOG: true, VERACODE_STAGE: "${VERACODE_STAGE}")
+            }
+        }
+        fixed {
+            script {
+                sendEmailNotification(EMAIL_TO: POST_EMAIL_TO, ATTACH_LOG: false)
+                sendEmailNotification(EMAIL_TO: POST_EMAIL_TO, ATTACH_LOG: false, VERACODE_STAGE: "${VERACODE_STAGE}")
+            }
+        }
+        aborted {
+            script {
+                sendEmailNotification(EMAIL_TO: POST_EMAIL_TO, ATTACH_LOG: false)
+                sendEmailNotification(EMAIL_TO: POST_EMAIL_TO, ATTACH_LOG: false, VERACODE_STAGE: "${VERACODE_STAGE}")
+            }
+        }
+        always {
+            node('cloud-rdit-mlops-linux') {
+                step([$class: 'WsCleanup'])
+            }
+        }
+    }
+    
